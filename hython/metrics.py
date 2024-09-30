@@ -24,7 +24,7 @@ class Metric:
     TODO: In forecasting, the shape of y_true and y_pred is going to be (N,T,C), where T is the n of future time steps.
 
     """
-    def __init__(self):
+    def __init__(self, **kwargs):
         pass
 
 class MSEMetric(Metric):
