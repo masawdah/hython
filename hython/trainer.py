@@ -67,11 +67,15 @@ def metric_epoch(metric_func, y_pred, y_true, target_names):
 
 
 def loss_batch(loss_func, output, target, opt=None, gradient_clip = None, model=None, add_losses: dict = {}):
-    if target.shape[-1] == 1:
+    if isinstance(output, list):
+        loss = loss_func(target, output[0], output[1])
+        
+    elif target.shape[-1] == 1:
         target = torch.squeeze(target)
         output = torch.squeeze(output)
-
-    loss = loss_func(target, output)
+        loss = loss_func(target, output)
+    else:
+        loss = loss_func(target, output)
 
     # compound more losses, in case dict is not empty
     # TODO: add user-defined weights
@@ -230,19 +234,27 @@ class RNNTrainer(AbstractTrainer):
                 )
 
                 output = model(x_concat)
+                mean_output = output[0]
+                std_output = output[1]
 
                 # physics based loss
-                add_losses = self.P.loss_physics_collection["PrecipSoilMoisture"](targets_bt[..., [0]], output[..., [0]])
+                add_losses = self.P.loss_physics_collection["PrecipSoilMoisture"](targets_bt[..., [0]], mean_output[..., [0]])
 
-                output = self.predict_step(output, steps=-1)
+                mean_output = self.predict_step(mean_output, steps=-1)
+                std_output = self.predict_step(std_output, steps=-1)
+                output = [mean_output, std_output]
                 target = self.predict_step(targets_bt, steps=-1)
 
                 if epoch_preds is None:
-                    epoch_preds = output.detach().cpu().numpy()
+                    epoch_mean_preds = mean_output.detach().cpu().numpy()
+                    epoch_std_preds = std_output.detach().cpu().numpy()
                     epoch_targets = target.detach().cpu().numpy()
                 else:
-                    epoch_preds = np.concatenate(
-                        (epoch_preds, output.detach().cpu().numpy()), axis=0
+                    epoch_mean_preds = np.concatenate(
+                        (epoch_mean_preds, mean_output.detach().cpu().numpy()), axis=0
+                    )
+                    epoch_std_preds = np.concatenate(
+                        (epoch_std_preds, std_output.detach().cpu().numpy()), axis=0
                     )
                     epoch_targets = np.concatenate(
                         (epoch_targets, target.detach().cpu().numpy()), axis=0
@@ -259,7 +271,7 @@ class RNNTrainer(AbstractTrainer):
         epoch_loss = running_batch_loss / data_points
         
         metric = metric_epoch(
-            self.P.metric_func, epoch_targets, epoch_preds, self.P.target_names
+            self.P.metric_func, epoch_targets, epoch_mean_preds, self.P.target_names
         )
 
         return epoch_loss, metric
